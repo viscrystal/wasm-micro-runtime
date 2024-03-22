@@ -2423,12 +2423,21 @@ load_init_data_section(const uint8 *buf, const uint8 *buf_end,
     }
 
     read_uint32(p, p_end, module->aux_data_end_global_index);
-    read_uint32(p, p_end, module->aux_data_end);
+    read_uint64(p, p_end, module->aux_data_end);
     read_uint32(p, p_end, module->aux_heap_base_global_index);
-    read_uint32(p, p_end, module->aux_heap_base);
+    read_uint64(p, p_end, module->aux_heap_base);
     read_uint32(p, p_end, module->aux_stack_top_global_index);
-    read_uint32(p, p_end, module->aux_stack_bottom);
+    read_uint64(p, p_end, module->aux_stack_bottom);
     read_uint32(p, p_end, module->aux_stack_size);
+
+    if (module->aux_data_end >= MAX_LINEAR_MEMORY_SIZE
+        || module->aux_heap_base >= MAX_LINEAR_MEMORY_SIZE
+        || module->aux_stack_bottom >= MAX_LINEAR_MEMORY_SIZE) {
+        set_error_buf(
+            error_buf, error_buf_size,
+            "invalid range of aux_date_end/aux_heap_base/aux_stack_bottom");
+        return false;
+    }
 
     if (!load_object_data_sections_info(&p, p_end, module,
                                         is_load_from_file_buf, error_buf,
@@ -2500,15 +2509,26 @@ load_function_section(const uint8 *buf, const uint8 *buf_end, AOTModule *module,
     const uint8 *p = buf, *p_end = buf_end;
     uint32 i;
     uint64 size, text_offset;
+    uint32 func_count = module->func_count;
 
-    size = sizeof(void *) * (uint64)module->func_count;
+#if defined(BUILD_TARGET_XTENSA)
+    /*
+     * For Xtensa XIP, real func_count is doubled, including aot_func and
+     * aot_func_internal, so need to multipy func_count by 2 here.
+     */
+    if (module->is_indirect_mode) {
+        func_count *= 2;
+    }
+#endif
+
+    size = sizeof(void *) * (uint64)func_count;
     if (size > 0
         && !(module->func_ptrs =
                  loader_malloc(size, error_buf, error_buf_size))) {
         return false;
     }
 
-    for (i = 0; i < module->func_count; i++) {
+    for (i = 0; i < func_count; i++) {
         if (sizeof(void *) == 8) {
             read_uint64(p, p_end, text_offset);
         }
@@ -2543,14 +2563,14 @@ load_function_section(const uint8 *buf, const uint8 *buf_end, AOTModule *module,
         module->start_function = NULL;
     }
 
-    size = sizeof(uint32) * (uint64)module->func_count;
+    size = sizeof(uint32) * (uint64)func_count;
     if (size > 0
         && !(module->func_type_indexes =
                  loader_malloc(size, error_buf, error_buf_size))) {
         return false;
     }
 
-    for (i = 0; i < module->func_count; i++) {
+    for (i = 0; i < func_count; i++) {
         read_uint32(p, p_end, module->func_type_indexes[i]);
         if (module->func_type_indexes[i] >= module->type_count) {
             set_error_buf(error_buf, error_buf_size, "unknown type");
@@ -2889,6 +2909,17 @@ do_text_relocation(AOTModule *module, AOTRelocationGroup *group,
         else if (!strncmp(symbol, "_" AOT_FUNC_PREFIX,
                           strlen("_" AOT_FUNC_PREFIX))) {
             p = symbol + strlen("_" AOT_FUNC_PREFIX);
+            if (*p == '\0'
+                || (func_index = (uint32)atoi(p)) > module->func_count) {
+                set_error_buf_v(error_buf, error_buf_size, "invalid symbol %s",
+                                symbol);
+                goto check_symbol_fail;
+            }
+            symbol_addr = module->func_ptrs[func_index];
+        }
+        else if (!strncmp(symbol, "_" AOT_FUNC_INTERNAL_PREFIX,
+                          strlen("_" AOT_FUNC_INTERNAL_PREFIX))) {
+            p = symbol + strlen("_" AOT_FUNC_INTERNAL_PREFIX);
             if (*p == '\0'
                 || (func_index = (uint32)atoi(p)) > module->func_count) {
                 set_error_buf_v(error_buf, error_buf_size, "invalid symbol %s",

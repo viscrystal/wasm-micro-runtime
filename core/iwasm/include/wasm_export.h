@@ -183,6 +183,16 @@ typedef struct RuntimeInitArgs {
     bool enable_linux_perf;
 } RuntimeInitArgs;
 
+#ifndef INSTANTIATION_ARGS_OPTION_DEFINED
+#define INSTANTIATION_ARGS_OPTION_DEFINED
+/* WASM module instantiation arguments */
+typedef struct InstantiationArgs {
+    uint32_t default_stack_size;
+    uint32_t host_managed_heap_size;
+    uint32_t max_memory_pages;
+} InstantiationArgs;
+#endif /* INSTANTIATION_ARGS_OPTION_DEFINED */
+
 #ifndef WASM_VALKIND_T_DEFINED
 #define WASM_VALKIND_T_DEFINED
 typedef uint8_t wasm_valkind_t;
@@ -528,6 +538,16 @@ wasm_runtime_instantiate(const wasm_module_t module,
                          char *error_buf, uint32_t error_buf_size);
 
 /**
+ * Instantiate a WASM module, with specified instantiation arguments
+ * 
+ * Same as wasm_runtime_instantiate, but it also allows overwriting maximum memory
+ */
+WASM_RUNTIME_API_EXTERN wasm_module_inst_t
+wasm_runtime_instantiate_ex(const wasm_module_t module,
+                         const InstantiationArgs *args,
+                         char *error_buf, uint32_t error_buf_size);
+
+/**
  * Set the running mode of a WASM module instance, override the
  * default running mode of the runtime. Note that it only makes sense when
  * the input is a wasm bytecode file: for the AOT file, runtime always runs
@@ -596,13 +616,12 @@ wasm_runtime_get_wasi_exit_code(wasm_module_inst_t module_inst);
  *
  * @param module_inst the module instance
  * @param name the name of the function
- * @param signature the signature of the function, ignored currently
  *
  * @return the function instance found, NULL if not found
  */
 WASM_RUNTIME_API_EXTERN wasm_function_inst_t
 wasm_runtime_lookup_function(wasm_module_inst_t const module_inst,
-                             const char *name, const char *signature);
+                             const char *name);
 
 /**
  * Get parameter count of the function instance
@@ -1011,8 +1030,8 @@ wasm_runtime_is_bounds_checks_enabled(
  *         it is not an absolute address.
  *         Return non-zero if success, zero if failed.
  */
-WASM_RUNTIME_API_EXTERN uint32_t
-wasm_runtime_module_malloc(wasm_module_inst_t module_inst, uint32_t size,
+WASM_RUNTIME_API_EXTERN uint64_t
+wasm_runtime_module_malloc(wasm_module_inst_t module_inst, uint64_t size,
                            void **p_native_addr);
 
 /**
@@ -1022,7 +1041,7 @@ wasm_runtime_module_malloc(wasm_module_inst_t module_inst, uint32_t size,
  * @param ptr the pointer to free
  */
 WASM_RUNTIME_API_EXTERN void
-wasm_runtime_module_free(wasm_module_inst_t module_inst, uint32_t ptr);
+wasm_runtime_module_free(wasm_module_inst_t module_inst, uint64_t ptr);
 
 /**
  * Allocate memory from the heap of WASM module instance and initialize
@@ -1037,9 +1056,9 @@ wasm_runtime_module_free(wasm_module_inst_t module_inst, uint32_t ptr);
  *         it is not an absolute address.
  *         Return non-zero if success, zero if failed.
  */
-WASM_RUNTIME_API_EXTERN uint32_t
+WASM_RUNTIME_API_EXTERN uint64_t
 wasm_runtime_module_dup_data(wasm_module_inst_t module_inst,
-                             const char *src, uint32_t size);
+                             const char *src, uint64_t size);
 
 /**
  * Validate the app address, check whether it belongs to WASM module
@@ -1054,7 +1073,7 @@ wasm_runtime_module_dup_data(wasm_module_inst_t module_inst,
  */
 WASM_RUNTIME_API_EXTERN bool
 wasm_runtime_validate_app_addr(wasm_module_inst_t module_inst,
-                               uint32_t app_offset, uint32_t size);
+                               uint64_t app_offset, uint64_t size);
 
 /**
  * Similar to wasm_runtime_validate_app_addr(), except that the size parameter
@@ -1076,7 +1095,7 @@ wasm_runtime_validate_app_addr(wasm_module_inst_t module_inst,
  */
 WASM_RUNTIME_API_EXTERN bool
 wasm_runtime_validate_app_str_addr(wasm_module_inst_t module_inst,
-                                   uint32_t app_str_offset);
+                                   uint64_t app_str_offset);
 
 /**
  * Validate the native address, check whether it belongs to WASM module
@@ -1092,7 +1111,7 @@ wasm_runtime_validate_app_str_addr(wasm_module_inst_t module_inst,
  */
 WASM_RUNTIME_API_EXTERN bool
 wasm_runtime_validate_native_addr(wasm_module_inst_t module_inst,
-                                  void *native_ptr, uint32_t size);
+                                  void *native_ptr, uint64_t size);
 
 /**
  * Convert app address(relative address) to native address(absolute address)
@@ -1108,7 +1127,7 @@ wasm_runtime_validate_native_addr(wasm_module_inst_t module_inst,
  */
 WASM_RUNTIME_API_EXTERN void *
 wasm_runtime_addr_app_to_native(wasm_module_inst_t module_inst,
-                                uint32_t app_offset);
+                                uint64_t app_offset);
 
 /**
  * Convert native address(absolute address) to app address(relative address)
@@ -1118,7 +1137,7 @@ wasm_runtime_addr_app_to_native(wasm_module_inst_t module_inst,
  *
  * @return the app address converted
  */
-WASM_RUNTIME_API_EXTERN uint32_t
+WASM_RUNTIME_API_EXTERN uint64_t
 wasm_runtime_addr_native_to_app(wasm_module_inst_t module_inst,
                                 void *native_ptr);
 
@@ -1134,9 +1153,9 @@ wasm_runtime_addr_native_to_app(wasm_module_inst_t module_inst,
  */
 WASM_RUNTIME_API_EXTERN bool
 wasm_runtime_get_app_addr_range(wasm_module_inst_t module_inst,
-                                uint32_t app_offset,
-                                uint32_t *p_app_start_offset,
-                                uint32_t *p_app_end_offset);
+                                uint64_t app_offset,
+                                uint64_t *p_app_start_offset,
+                                uint64_t *p_app_end_offset);
 
 /**
  * Get the native address range (absolute address) that a native address
